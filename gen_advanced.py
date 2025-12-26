@@ -44,7 +44,7 @@ def calculate_shard_depth(hex_len: int) -> int:
     """
     return 0
 
-def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int) -> str:
+def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int, categories: list = None) -> str:
     """生成 Cloudflare 规则表达式"""
     # 路径前缀
     base_dir = "/advanced_categories/" if is_category else "/advanced_data/"
@@ -53,12 +53,36 @@ def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int) -> str:
     
     # 1. 分类参数处理 (仅分类模式)
     if is_category:
-        # 假设 c=a, 取第2位开始的1个字符
-        parts.append('substring(http.request.uri.query, 2, 1)')
+        if categories:
+            # 排序：长度短的在内层，长度长的在外层（后遍历）
+            # 这样 if(long, long, if(short, short, ...))
+            # 确保 c=ab 先匹配 ab，而不是先匹配 a (如果 contains c=a 包含 c=ab 的情况)
+            # 虽然 Cloudflare contains 可能不区分单词边界，所以这样排序更安全
+            categories_sorted = sorted(categories, key=lambda x: (len(x), x))
+            
+            # 使用嵌套 if 表达式来匹配分类，避免 substring 的不稳定性
+            # 默认 fallback 到一个不存在的分类名，确保输错参数时返回 404，而不是错误的分类数据
+            fallback = "unknown_category"
+            expr = f'"{fallback}"'
+            
+            for cat in categories_sorted:
+                # 简单匹配 c=cat。如果需要更严谨，可以考虑 regex
+                # 但免费版对 regex 的支持可能有限制，这里用 contains 足够应对常规 API 调用
+                cond = f'http.request.uri.query contains "c={cat}"'
+                expr = f'if({cond}, "{cat}", {expr})'
+            
+            parts.append(expr)
+        else:
+            # 如果没有分类列表（不应该发生），回退到旧逻辑（虽然不可靠）
+            parts.append('substring(http.request.uri.query, 2, 1)')
+            
         parts.append('"/"')
 
+<<<<<<< HEAD
+=======
     # 2. 目录分层 (已废弃，强制为 0)
     # 由于 CF 限制，不再支持目录分层
+>>>>>>> 21fe3f585c9bff00d0d280fc1a509b93c878d435
     
     # 3. 文件名
     # 直接使用 uuidv4 截取 hex_len 长度
@@ -94,34 +118,38 @@ def get_file_path(base_dir: Path, hex_str: str, shard_depth: int) -> Path:
     return base_dir / "/".join(parts) / filename
 
 def write_files(data_list, base_dir: Path, hex_len: int, shard_depth: int):
-    """通用写入函数"""
+    """通用写入函数 (总是使用 Fill-Full 策略)"""
     total_slots = 16 ** hex_len
+    
+    # 总是初始化所有 buckets
     buckets = [[] for _ in range(total_slots)]
     
+    # 循环填充所有槽位
     data_cycle = cycle(data_list)
+    print(f"  [Fill-Full] Filling {total_slots} slots with {len(data_list)} items...")
+    for i in range(total_slots):
+        buckets[i].append(next(data_cycle))
     
-    print(f"Distributing {len(data_list)} items into {total_slots} buckets (Depth: {shard_depth})...")
+    # 写入文件
+    count = 0
     for i in range(total_slots):
-        obj = next(data_cycle)
-        buckets[i].append(obj)
-        
-    print(f"Writing files to {base_dir}...")
-    for i in range(total_slots):
+        content = buckets[i]
+        if not content:
+            continue
+            
         hex_str = format(i, f'0{hex_len}x')
         file_path = get_file_path(base_dir, hex_str, shard_depth)
         ensure_dir(file_path.parent)
         
-        content = buckets[i]
-        # 单文件单对象逻辑
-        final_data = content
-        if not STORE_AS_LIST and len(content) == 1:
-            final_data = content[0]
+        # 单文件单对象逻辑 (始终启用，原作者模式)
+        final_data = content[0]
             
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, separators=(',', ':'))
             
-        if i % 5000 == 0 and i > 0:
-            print(f"  Progress: {i}/{total_slots}")
+        count += 1
+        if count % 10000 == 0:
+            print(f"    Written {count}/{total_slots} files...")
 
 def main():
     # 清理旧数据
@@ -152,46 +180,85 @@ def main():
                 print(f"Error reading {file_path}: {e}")
 
     if not all_objects:
-        print("No data found.")
+        print("No data found in SOURCE_DIR.")
+        
+        # 尝试读取 categories.json 获取分类列表以生成规则
+        cat_keys = []
+        if Path("categories.json").exists():
+            try:
+                with open("categories.json", "r", encoding="utf-8") as f:
+                    cats = json.load(f)
+                    cat_keys = [c['key'] for c in cats]
+                    print(f"Loaded {len(cat_keys)} categories from categories.json: {cat_keys}")
+            except Exception as e:
+                print(f"Failed to load categories.json: {e}")
+
+        if cat_keys:
+             print("\nGenerating rules.txt based on categories.json (Simulation Mode)...")
+             # 使用默认值，因为没有真实数据
+             # 默认用 4位 Hex (65536) 确保和真实环境一致
+             global_hex_len = 4 
+             cat_hex_len = 3    
+             global_shard_depth = 0
+             cat_shard_depth = 0
+             
+             rule_global = generate_cf_rule(False, global_hex_len, global_shard_depth)
+             rule_category = generate_cf_rule(True, cat_hex_len, cat_shard_depth, categories=cat_keys)
+             
+             with open("rules.txt", "w", encoding="utf-8") as f:
+                f.write("=== Cloudflare Transform Rules (Auto Generated) ===\n")
+                if not TARGET_DOMAIN:
+                    f.write("!!! IMPORTANT: Replace 'api.yourdomain.com' with your actual subdomain !!!\n\n")
+                else:
+                    f.write(f"Target Domain: {TARGET_DOMAIN}\n\n")
+                
+                domain_check = f'(http.host eq "{TARGET_DOMAIN if TARGET_DOMAIN else "api.yourdomain.com"}")'
+
+                f.write(f"[Rule 1: Hitokoto Random] (HEX_LEN={global_hex_len}, SHARD={global_shard_depth})\n")
+                f.write(f"Condition: {domain_check} and (http.request.uri.path eq \"/\") and (not http.request.uri.query contains \"c=\")\n")
+                f.write("Expression:\n")
+                f.write(rule_global + "\n\n")
+                
+                f.write("-" * 50 + "\n\n")
+                
+                f.write(f"[Rule 2: Hitokoto Category] (HEX_LEN={cat_hex_len}, SHARD={cat_shard_depth})\n")
+                f.write(f"Condition: {domain_check} and (http.request.uri.path eq \"/\") and (http.request.uri.query contains \"c=\")\n")
+                f.write("Expression:\n")
+                f.write(rule_category + "\n")
+             
+             print(f"Done. Please check 'rules.txt'.")
+             return
         return
 
-    # 1. 生成全量数据
-    # 自动计算 HEX_LEN
     global_hex_len = calculate_hex_len(len(all_objects), MIN_HEX_LEN)
     global_shard_depth = calculate_shard_depth(global_hex_len)
     
     print(f"\n[Global Data] Items: {len(all_objects)}")
     print(f"  -> Auto-scaled HEX_LEN: {global_hex_len} (Capacity: {16**global_hex_len})")
-    print(f"  -> Smart Shard Depth: {global_shard_depth}")
+    print(f"  -> Strategy: Fill-Full (Cycle through data to fill all slots)")
     
     write_files(all_objects, OUTPUT_DIR, global_hex_len, global_shard_depth)
-    
-    # 2. 生成分类数据
-    # 计算所有分类中最大的需求
+
     max_cat_items = 0
     if category_map:
         max_cat_items = max(len(d) for d in category_map.values())
-    
-    # 分类数据通常比全量少，但为了安全，我们也自动计算
-    # 比如分类里有 7万条数据，也得升到 Level 5
-    # 我们设定分类的最小长度为 3 (4096)，稍微小一点以节省文件数
     cat_hex_len = calculate_hex_len(max_cat_items, min_len=3)
     cat_shard_depth = calculate_shard_depth(cat_hex_len)
     
     print(f"\n[Category Data] Max Category Items: {max_cat_items}")
     print(f"  -> Auto-scaled HEX_LEN: {cat_hex_len} (Capacity: {16**cat_hex_len})")
-    print(f"  -> Smart Shard Depth: {cat_shard_depth}")
+    print(f"  -> Strategy: Fill-Full (Cycle through data to fill all slots)")
     
     for cat_name, cat_data in category_map.items():
-        # print(f"Processing category: {cat_name} ({len(cat_data)} items)")
         cat_dir = CATEGORIES_DIR / cat_name
         ensure_dir(cat_dir)
+        # 使用 write_files 总是 Fill-Full 模式
         write_files(cat_data, cat_dir, cat_hex_len, cat_shard_depth)
 
     # 3. 生成规则文件
     print("\nGenerating rules.txt...")
     rule_global = generate_cf_rule(False, global_hex_len, global_shard_depth)
-    rule_category = generate_cf_rule(True, cat_hex_len, cat_shard_depth)
+    rule_category = generate_cf_rule(True, cat_hex_len, cat_shard_depth, categories=list(category_map.keys()))
     
     with open("rules.txt", "w", encoding="utf-8") as f:
         f.write("=== Cloudflare Transform Rules (Auto Generated) ===\n")
