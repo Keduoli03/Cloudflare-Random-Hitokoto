@@ -16,6 +16,11 @@ STORE_AS_LIST = False
 SOURCE_DIR = Path("sentences-bundle/sentences")
 OUTPUT_DIR = Path("advanced_data")
 CATEGORIES_DIR = Path("advanced_categories")
+
+# 你的 API 域名 (生成规则时会用到)
+# 留空则生成通用规则模板
+TARGET_DOMAIN = "hitokoto.blueke.dpdns.org"
+
 # ===========================================
 
 def calculate_hex_len(item_count: int, min_len: int) -> int:
@@ -53,17 +58,18 @@ def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int) -> str:
         parts.append('"/"')
 
     # 2. 目录分层 (Shard)
-    # 例如 shard_depth=2, 意味着前2位 hex 用于目录
-    # substring(uuid, 0, 1) -> 第1层
-    # substring(uuid, 1, 1) -> 第2层
+    # 为了绕过 Cloudflare 免费版 uuidv4() 只能调用 1 次的限制
+    # 我们使用 http.request.id (也是 hex 字符串) 来生成目录层级的随机数
     for i in range(shard_depth):
-        parts.append(f'substring(uuidv4(cf.random_seed), {i}, 1)')
+        parts.append(f'substring(http.request.id, {i}, 1)')
         parts.append('"/"')
     
     # 3. 文件名 (剩余的所有 hex)
-    # 比如 hex_len=4, shard=2, 剩下 2 位 (index 2, length 2)
+    # 文件名部分使用 uuidv4，保证唯一性和随机性
+    # 比如 hex_len=4, shard=2, 剩下 2 位
     filename_len = hex_len - shard_depth
-    parts.append(f'substring(uuidv4(cf.random_seed), {shard_depth}, {filename_len})')
+    # 注意：这里从 0 开始截取即可，因为 uuidv4 是独立的随机源，不需要接着 request.id 后面
+    parts.append(f'substring(uuidv4(cf.random_seed), 0, {filename_len})')
     parts.append('".json"')
     
     return f"concat({', '.join(parts)})"
@@ -189,17 +195,23 @@ def main():
     rule_category = generate_cf_rule(True, cat_hex_len, cat_shard_depth)
     
     with open("rules.txt", "w", encoding="utf-8") as f:
-        f.write("=== Cloudflare Transform Rules (Auto Generated) ===\n\n")
+        f.write("=== Cloudflare Transform Rules (Auto Generated) ===\n")
+        if not TARGET_DOMAIN:
+            f.write("!!! IMPORTANT: Replace 'api.yourdomain.com' with your actual subdomain !!!\n\n")
+        else:
+            f.write(f"Target Domain: {TARGET_DOMAIN}\n\n")
         
+        domain_check = f'(http.host eq "{TARGET_DOMAIN if TARGET_DOMAIN else "api.yourdomain.com"}")'
+
         f.write(f"[Rule 1: Hitokoto Random] (HEX_LEN={global_hex_len}, SHARD={global_shard_depth})\n")
-        f.write("Condition: (http.request.uri.path eq \"/\") and (not http.request.uri.query contains \"c=\")\n")
+        f.write(f"Condition: {domain_check} and (http.request.uri.path eq \"/\") and (not http.request.uri.query contains \"c=\")\n")
         f.write("Expression:\n")
         f.write(rule_global + "\n\n")
         
         f.write("-" * 50 + "\n\n")
         
         f.write(f"[Rule 2: Hitokoto Category] (HEX_LEN={cat_hex_len}, SHARD={cat_shard_depth})\n")
-        f.write("Condition: (http.request.uri.path eq \"/\") and (http.request.uri.query contains \"c=\")\n")
+        f.write(f"Condition: {domain_check} and (http.request.uri.path eq \"/\") and (http.request.uri.query contains \"c=\")\n")
         f.write("Expression:\n")
         f.write(rule_category + "\n")
         
