@@ -35,14 +35,14 @@ def calculate_hex_len(item_count: int, min_len: int) -> int:
 def calculate_shard_depth(hex_len: int) -> int:
     """
     智能计算目录分层深度 (Smart Sharding)
-    目标：确保每个目录下文件数量不超过阈值 (如 4096)，避免单个目录过大。
-    公式：Shard Depth = max(0, hex_len - 3)
+    由于 Cloudflare 免费版限制 uuidv4() 只能调用 1 次，
+    我们无法既截取目录又截取文件名（因为那是两次调用）。
     
-    hex_len=3 (4096) -> depth=0 -> 4096 files/dir (ok)
-    hex_len=4 (65536) -> depth=1 -> 16 dirs * 4096 files (ok)
-    hex_len=5 (1M) -> depth=2 -> 256 dirs * 4096 files (ok)
+    因此，必须强制使用扁平结构 (Depth=0)，
+    所有文件直接存放在 advanced_data/ 下，例如 advanced_data/a1b2.json
+    GitHub Pages 对单目录几万个文件支持良好，API 访问不受影响。
     """
-    return max(0, hex_len - 3)
+    return 0
 
 def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int) -> str:
     """生成 Cloudflare 规则表达式"""
@@ -57,19 +57,18 @@ def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int) -> str:
         parts.append('substring(http.request.uri.query, 2, 1)')
         parts.append('"/"')
 
-    # 2. 目录分层 (Shard)
-    # 为了绕过 Cloudflare 免费版 uuidv4() 只能调用 1 次的限制
-    # 我们使用 http.request.id (也是 hex 字符串) 来生成目录层级的随机数
-    for i in range(shard_depth):
-        parts.append(f'substring(http.request.id, {i}, 1)')
-        parts.append('"/"')
+    # 2. 目录分层 (已废弃，强制为 0)
+    # 由于 CF 限制，不再支持目录分层
     
-    # 3. 文件名 (剩余的所有 hex)
-    # 文件名部分使用 uuidv4，保证唯一性和随机性
-    # 比如 hex_len=4, shard=2, 剩下 2 位
-    filename_len = hex_len - shard_depth
-    # 注意：这里从 0 开始截取即可，因为 uuidv4 是独立的随机源，不需要接着 request.id 后面
-    parts.append(f'substring(uuidv4(cf.random_seed), 0, {filename_len})')
+    # 3. 文件名
+    # 直接使用 uuidv4 截取 hex_len 长度
+    if is_category:
+         # 分类模式下，uuidv4 只用于文件名
+         parts.append(f'substring(uuidv4(cf.random_seed), 0, {hex_len})')
+    else:
+         # 全量模式下，uuidv4 用于整个文件名
+         parts.append(f'substring(uuidv4(cf.random_seed), 0, {hex_len})')
+         
     parts.append('".json"')
     
     return f"concat({', '.join(parts)})"
