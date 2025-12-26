@@ -31,6 +31,14 @@ jobs:
           UPSTREAM_LATEST=$(git ls-remote https://github.com/hitokoto-osc/sentences-bundle.git HEAD | awk '{ print $1 }')
           echo "Latest upstream commit: $UPSTREAM_LATEST"
           
+          # 强制构建逻辑：如果是手动触发，忽略检查
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+             echo "Manual trigger detected. Forcing build."
+             echo "skip_build=false" >> $GITHUB_OUTPUT
+             echo "$UPSTREAM_LATEST" > .upstream_last_commit
+             exit 0
+          fi
+          
           # 尝试读取上次缓存的 commit hash (如果有)
           if [ -f .upstream_last_commit ]; then
             LAST_PROCESSED=$(cat .upstream_last_commit)
