@@ -86,11 +86,6 @@ jobs:
           
           # 防止 push 冲突
           git pull origin main --rebase || echo "Rebase failed, trying merge" || git merge origin/main
-
-          # 临时修改 .gitignore 以允许提交数据文件
-          sed -i '/advanced_data\//d' .gitignore
-          sed -i '/advanced_categories\//d' .gitignore
-
           # 提交所有更改（包括数据文件）
           git add .
           
