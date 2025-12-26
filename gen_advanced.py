@@ -112,33 +112,18 @@ def get_file_path(base_dir: Path, hex_str: str, shard_depth: int) -> Path:
     # 组合
     return base_dir / "/".join(parts) / filename
 
-def write_files(data_list, base_dir: Path, hex_len: int, shard_depth: int, fill_full: bool = False):
-    """通用写入函数"""
+def write_files(data_list, base_dir: Path, hex_len: int, shard_depth: int):
+    """通用写入函数 (总是使用 Fill-Full 策略)"""
     total_slots = 16 ** hex_len
     
-    # 策略选择:
-    # 1. Fill-Full (强制填满): 无论数据多少，循环填充到所有 total_slots
-    # 2. Standard (按需填充): 只填充数据量这么多的文件 (已废弃，为了兼容性保留逻辑分支)
-    
-    # 如果开启 fill_full，我们需要填充所有 buckets
-    # 如果关闭，我们只填充 len(data_list) 个 buckets (但这会导致 404，所以建议总是开启或由外部控制)
-    
-    # 这里我们简化逻辑：总是初始化所有 buckets
+    # 总是初始化所有 buckets
     buckets = [[] for _ in range(total_slots)]
     
-    if fill_full:
-        # 循环填充所有槽位
-        data_cycle = cycle(data_list)
-        print(f"  [Fill-Full] Filling {total_slots} slots with {len(data_list)} items...")
-        for i in range(total_slots):
-            buckets[i].append(next(data_cycle))
-    else:
-        # 按需填充 (旧模式)
-        # 注意：现在已经全面采用 Fill-Full，此分支理论上不再执行
-        print(f"  [Standard] Filling {len(data_list)} slots...")
-        for i, item in enumerate(data_list):
-            if i < total_slots:
-                buckets[i].append(item)
+    # 循环填充所有槽位
+    data_cycle = cycle(data_list)
+    print(f"  [Fill-Full] Filling {total_slots} slots with {len(data_list)} items...")
+    for i in range(total_slots):
+        buckets[i].append(next(data_cycle))
     
     # 写入文件
     count = 0
@@ -238,14 +223,8 @@ def main():
              
              print(f"Done. Please check 'rules.txt'.")
              return
-             
         return
 
-    # 1. 生成全量数据
-    # 自动计算 HEX_LEN
-    # 注意：这里我们使用 Fill-Full 策略，所以 HEX_LEN 的计算逻辑需要稍微调整
-    # 只要数据量 > 16^(n-1)，我们就应该使用 n 位，并且把这 n 位填满。
-    # 例如：60000条 -> 16^4=65536 -> 用 4位，填满 65536 个文件。
     global_hex_len = calculate_hex_len(len(all_objects), MIN_HEX_LEN)
     global_shard_depth = calculate_shard_depth(global_hex_len)
     
@@ -253,20 +232,11 @@ def main():
     print(f"  -> Auto-scaled HEX_LEN: {global_hex_len} (Capacity: {16**global_hex_len})")
     print(f"  -> Strategy: Fill-Full (Cycle through data to fill all slots)")
     
-    write_files(all_objects, OUTPUT_DIR, global_hex_len, global_shard_depth, fill_full=True)
-    
-    # 2. 生成分类数据
-    # 计算所有分类中最大的需求
+    write_files(all_objects, OUTPUT_DIR, global_hex_len, global_shard_depth)
+
     max_cat_items = 0
     if category_map:
         max_cat_items = max(len(d) for d in category_map.values())
-    
-    # 智能扩容策略 (Auto-Scaling + Fill-Full Strategy)
-    # 1. 计算足以容纳最大分类的最小 Hex 长度
-    #    例如: 4000条 -> log16(4000) ≈ 2.99 -> ceil=3 (容量 4096) -> 够用
-    #    例如: 5000条 -> log16(5000) ≈ 3.07 -> ceil=4 (容量 65536) -> 自动扩容到 4位
-    # 2. 统一使用这个长度，把所有分类的坑位全部填满 (cycle填充)
-    #    这样无论哪个分类，无论随机到哪个 Hex，都保证有文件。
     cat_hex_len = calculate_hex_len(max_cat_items, min_len=3)
     cat_shard_depth = calculate_shard_depth(cat_hex_len)
     
@@ -277,13 +247,12 @@ def main():
     for cat_name, cat_data in category_map.items():
         cat_dir = CATEGORIES_DIR / cat_name
         ensure_dir(cat_dir)
-        # 使用 write_files_fill_full 模式 (需要修改 write_files 函数支持强制填满)
-        write_files(cat_data, cat_dir, cat_hex_len, cat_shard_depth, fill_full=True)
+        # 使用 write_files 总是 Fill-Full 模式
+        write_files(cat_data, cat_dir, cat_hex_len, cat_shard_depth)
 
     # 3. 生成规则文件
     print("\nGenerating rules.txt...")
     rule_global = generate_cf_rule(False, global_hex_len, global_shard_depth)
-    # 这里的 categories 列表仅用于生成规则中的匹配逻辑，不需要再传递 hex_len，因为规则里已经是固定的了
     rule_category = generate_cf_rule(True, cat_hex_len, cat_shard_depth, categories=list(category_map.keys()))
     
     with open("rules.txt", "w", encoding="utf-8") as f:
