@@ -82,17 +82,14 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 强制添加 rules.txt，即使它被 gitignore 忽略（如果有的话）
-          # 但 rules.txt 不应该被忽略。
-          # 关键点：我们需要先 pull 远程的最新更改，防止 push 时的冲突
-          # 因为这个工作流可能并发运行或者有其他提交
+          # 防止 push 冲突
           git pull origin main --rebase || echo "Rebase failed, trying merge" || git merge origin/main
 
-          # 强制添加状态文件和规则文件
-          git add -f .upstream_last_commit rules.txt
+          # 提交所有更改（包括数据文件）
+          git add .
           
           # 提交
-          git commit -m "Update state and rules [skip ci]" || echo "No changes to commit"
+          git commit -m "Update hitokoto data and rules [skip ci]" || echo "No changes to commit"
           
           # 推送
           git push
