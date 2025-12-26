@@ -61,8 +61,8 @@ jobs:
       - name: Remove Prev
         if: steps.check_upstream.outputs.skip_build != 'true'
         run: |
-          rm -rf advanced_categories
-          rm -rf advanced_data
+          rm -rf categories
+          rm -rf orig_data
           rm -f rules.txt
           
       - name: Clone origin

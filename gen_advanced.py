@@ -13,8 +13,8 @@ MIN_HEX_LEN = 4
 STORE_AS_LIST = False
 
 SOURCE_DIR = Path("sentences-bundle/sentences")
-OUTPUT_DIR = Path("advanced_data")
-CATEGORIES_DIR = Path("advanced_categories")
+OUTPUT_DIR = Path("orig_data")
+CATEGORIES_DIR = Path("categories")
 
 # 你的 API 域名 (生成规则时会用到)
 # 留空则生成通用规则模板
@@ -36,7 +36,7 @@ SHARD_DEPTH = 0
 def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int, categories: list = None) -> str:
     """生成 Cloudflare 规则表达式"""
     # 路径前缀
-    base_dir = "/advanced_categories/" if is_category else "/advanced_data/"
+    base_dir = "/categories/" if is_category else "/orig_data/"
     
     parts = [f'"{base_dir}"']
     
