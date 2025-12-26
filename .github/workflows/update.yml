@@ -1,6 +1,8 @@
 name: Update and Deploy
 
 on:
+  push:
+    branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
     - cron: '0 0 */3 * *' # 每3天运行一次 (UTC 0:00)
