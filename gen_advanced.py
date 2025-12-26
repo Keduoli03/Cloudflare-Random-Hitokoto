@@ -43,21 +43,8 @@ def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int, categori
     # 1. 分类参数处理 (仅分类模式)
     if is_category:
         if categories:
-            # 排序：长度短的在内层，长度长的在外层（后遍历）
-            # 这样 if(long, long, if(short, short, ...))
-            # 确保 c=ab 先匹配 ab，而不是先匹配 a (如果 contains c=a 包含 c=ab 的情况)
-            categories_sorted = sorted(categories, key=lambda x: (len(x), x))
             
-            # 使用嵌套 if 表达式来匹配分类
-            # 默认 fallback 到一个不存在的分类名，确保输错参数时返回 404
-            fallback = "unknown_category"
-            expr = f'"{fallback}"'
-            
-            for cat in categories_sorted:
-                cond = f'http.request.uri.query contains "c={cat}"'
-                expr = f'if({cond}, "{cat}", {expr})'
-            
-            parts.append(expr)
+            parts.append('substring(http.request.uri.query, 2, 3)')
         else:
             # 如果没有分类列表（不应该发生），回退到旧逻辑
             parts.append('substring(http.request.uri.query, 2, 1)')
