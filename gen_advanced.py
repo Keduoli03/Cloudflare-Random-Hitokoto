@@ -141,26 +141,56 @@ def main():
         print("No data found.")
         return
 
-    # 1. 生成全量数据 (HEX_LEN)
-    print(f"\n[Global Data] Configuration: HEX_LEN={HEX_LEN}")
-    write_files(all_objects, OUTPUT_DIR, HEX_LEN)
+    # 1. 生成全量数据
+    # 自动计算 HEX_LEN
+    global_hex_len = calculate_hex_len(len(all_objects), MIN_HEX_LEN)
+    
+    print(f"\n[Global Data] Items: {len(all_objects)}")
+    print(f"  -> Auto-scaled HEX_LEN: {global_hex_len} (Capacity: {16**global_hex_len})")
+    
+    write_files(all_objects, OUTPUT_DIR, global_hex_len)
     
     # 2. 生成分类数据
-    # 分类数据量通常较小，我们可以用稍小的 HEX_LEN，或者保持一致
-    # 为了保证路径规则统一，建议保持一致，或者根据数据量动态调整。
-    # 考虑到 GitHub Pages 没限制，且为了规则统一，我们对分类也使用相同的 HEX_LEN - 1 (或者自定义)
-    # 原项目分类是 4096 (16^3)，全量是 65536 (16^4)。
-    # 这里我们设定分类为 HEX_LEN - 1，如果 HEX_LEN=4，则分类为 3 (4096个文件)，足够了。
-    CAT_HEX_LEN = max(3, HEX_LEN - 1)
+    # 计算所有分类中最大的需求
+    max_cat_items = 0
+    if category_map:
+        max_cat_items = max(len(d) for d in category_map.values())
     
-    print(f"\n[Category Data] Configuration: HEX_LEN={CAT_HEX_LEN}")
+    # 分类数据通常比全量少，但为了安全，我们也自动计算
+    # 比如分类里有 7万条数据，也得升到 Level 5
+    # 我们设定分类的最小长度为 3 (4096)，稍微小一点以节省文件数
+    cat_hex_len = calculate_hex_len(max_cat_items, min_len=3)
+    
+    print(f"\n[Category Data] Max Category Items: {max_cat_items}")
+    print(f"  -> Auto-scaled HEX_LEN: {cat_hex_len} (Capacity: {16**cat_hex_len})")
+    
     for cat_name, cat_data in category_map.items():
-        print(f"Processing category: {cat_name} ({len(cat_data)} items)")
+        # print(f"Processing category: {cat_name} ({len(cat_data)} items)")
         cat_dir = CATEGORIES_DIR / cat_name
         ensure_dir(cat_dir)
-        write_files(cat_data, cat_dir, CAT_HEX_LEN)
+        write_files(cat_data, cat_dir, cat_hex_len)
 
-    print("\nAll Done.")
+    # 3. 生成规则文件
+    print("\nGenerating rules.txt...")
+    rule_global = generate_cf_rule(False, global_hex_len, SHARD_DEPTH)
+    rule_category = generate_cf_rule(True, cat_hex_len, SHARD_DEPTH)
+    
+    with open("rules.txt", "w", encoding="utf-8") as f:
+        f.write("=== Cloudflare Transform Rules (Auto Generated) ===\n\n")
+        
+        f.write(f"[Rule 1: Hitokoto Random] (HEX_LEN={global_hex_len})\n")
+        f.write("Condition: (http.request.uri.path eq \"/\") and (not http.request.uri.query contains \"c=\")\n")
+        f.write("Expression:\n")
+        f.write(rule_global + "\n\n")
+        
+        f.write("-" * 50 + "\n\n")
+        
+        f.write(f"[Rule 2: Hitokoto Category] (HEX_LEN={cat_hex_len})\n")
+        f.write("Condition: (http.request.uri.path eq \"/\") and (http.request.uri.query contains \"c=\")\n")
+        f.write("Expression:\n")
+        f.write(rule_category + "\n")
+        
+    print(f"Done. Please check 'rules.txt' for the latest Cloudflare rules.")
 
 if __name__ == "__main__":
     main()
