@@ -81,8 +81,11 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add .
-          git commit -m "Update hitokoto data and rules" || exit 0
+          # 只提交状态文件和规则文件，不提交生成的大量数据文件
+          # 数据文件会被 .gitignore 忽略，但会被 upload-pages-artifact 上传并部署
+          git add .upstream_last_commit rules.txt
+          # 如果没有变更，不报错
+          git commit -m "Update state and rules" || echo "No changes to commit"
           git push
         
       - name: Upload Pages artifact

@@ -1,0 +1,12 @@
+# Generated data
+advanced_data/
+advanced_categories/
+sentences-bundle/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# System
+.DS_Store
+Thumbs.db
