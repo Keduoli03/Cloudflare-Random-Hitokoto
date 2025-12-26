@@ -1,0 +1,13 @@
+=== Cloudflare Transform Rules (Auto Generated) ===
+
+[Rule 1: Hitokoto Random] (HEX_LEN=4)
+Condition: (http.request.uri.path eq "/") and (not http.request.uri.query contains "c=")
+Expression:
+concat("/advanced_data/", substring(uuidv4(cf.random_seed), 0, 1), "/", substring(uuidv4(cf.random_seed), 1, 1), "/", substring(uuidv4(cf.random_seed), 2, 2), ".json")
+
+--------------------------------------------------
+
+[Rule 2: Hitokoto Category] (HEX_LEN=3)
+Condition: (http.request.uri.path eq "/") and (http.request.uri.query contains "c=")
+Expression:
+concat("/advanced_categories/", substring(http.request.uri.query, 2, 1), "/", substring(uuidv4(cf.random_seed), 0, 1), "/", substring(uuidv4(cf.random_seed), 1, 1), "/", substring(uuidv4(cf.random_seed), 2, 1), ".json")
