@@ -90,7 +90,7 @@ jobs:
           # 临时修改 .gitignore 以允许提交数据文件
           sed -i '/advanced_data\//d' .gitignore
           sed -i '/advanced_categories\//d' .gitignore
-          
+
           # 提交所有更改（包括数据文件）
           git add .
           
@@ -104,6 +104,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
           
       - name: Deploy to GitHub Pages
         id: deployment
