@@ -78,14 +78,6 @@ def generate_cf_rule(is_category: bool, hex_len: int, shard_depth: int, categori
             
         parts.append('"/"')
 
-<<<<<<< HEAD
-=======
-    # 2. 目录分层 (已废弃，强制为 0)
-    # 由于 CF 限制，不再支持目录分层
->>>>>>> 21fe3f585c9bff00d0d280fc1a509b93c878d435
-    
-    # 3. 文件名
-    # 直接使用 uuidv4 截取 hex_len 长度
     if is_category:
          # 分类模式下，uuidv4 只用于文件名
          parts.append(f'substring(uuidv4(cf.random_seed), 0, {hex_len})')
